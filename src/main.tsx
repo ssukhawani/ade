@@ -45,7 +45,11 @@ import {
 } from "./lib/costs";
 import { PageControls } from "./components/page-controls";
 import { ExtractedTable } from "./components/extracted-table";
-import { controlRows, tableControlLinks } from "./lib/controls";
+import {
+  controlRows,
+  tableControlLinks,
+  tableCellSelections,
+} from "./lib/controls";
 import { SessionHistory } from "./components/session-history";
 import {
   saveSession,
@@ -76,7 +80,11 @@ function readKey() {
   }
 }
 function needsReview(result?: PageResult) {
-  return !!result && controlRows(result).some((c) => c.review);
+  return (
+    !!result &&
+    (controlRows(result).some((c) => c.review) ||
+      [...tableCellSelections(result).values()].flat().some((c) => c.review))
+  );
 }
 function App() {
   const [key, setKey] = useState(readKey);
@@ -271,6 +279,7 @@ function App() {
     }
   }
   const result = results[current];
+  const selectionCells = result ? tableCellSelections(result) : new Map();
   const tableLinks = result ? tableControlLinks(result) : new Map();
   const tableControlKeys = new Set<string>(
     [...tableLinks.values()].map((link) => link.control.key),
@@ -1068,6 +1077,7 @@ function App() {
                               table={table}
                               index={index}
                               links={tableLinks}
+                              selectionCells={selectionCells}
                               onDetails={() => setTab("controls")}
                             />
                           ),

@@ -6,11 +6,13 @@ export function ExtractedTable({
   index,
   links,
   onDetails,
+  selectionCells,
 }: {
   table: any;
   index: number;
   links: Map<string, { control: ControlRow; column: number }>;
   onDetails: () => void;
+  selectionCells: Map<string, ControlRow[]>;
 }) {
   return (
     <div className="mt-6">
@@ -39,9 +41,27 @@ export function ExtractedTable({
                 >
                   {tableCells(row).map((value: unknown, ci: number) => (
                     <td key={ci} className="p-2">
-                      <span>{typeof value === "object"
-                        ? JSON.stringify(value)
-                        : String(value ?? "")}</span>
+                      <span>
+                        {typeof value === "object"
+                          ? JSON.stringify(value)
+                          : String(value ?? "")}
+                      </span>
+                      {(selectionCells.get(`${index}:${ri}:${ci}`) || [])
+                        .filter((selection) => selection.review)
+                        .map((selection) => (
+                          <div
+                            key={selection.key}
+                            className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800"
+                          >
+                            <p className="font-medium">
+                              Table selection needs review
+                            </p>
+                            <p>
+                              Extraction: {selection.state} · Verification:{" "}
+                              {selection.verifiedState || "NOT VERIFIED"}
+                            </p>
+                          </div>
+                        ))}
                       {c && ci === link?.column && (
                         <div className="mt-2 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">

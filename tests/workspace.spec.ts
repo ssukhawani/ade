@@ -623,13 +623,11 @@ test("table controls appear once in Overview, while standalone and ambiguous mat
   });
   await page.goto("/");
   await page.getByLabel("Anthropic API key").fill("test-key");
-  await page
-    .getByLabel("Upload PDF", { exact: true })
-    .setInputFiles({
-      name: "checklist.pdf",
-      mimeType: "application/pdf",
-      buffer: pdf(),
-    });
+  await page.getByLabel("Upload PDF", { exact: true }).setInputFiles({
+    name: "checklist.pdf",
+    mimeType: "application/pdf",
+    buffer: pdf(),
+  });
   await page
     .getByRole("button", { name: "Extract page 1", exact: true })
     .first()
@@ -682,4 +680,139 @@ test("table controls appear once in Overview, while standalone and ambiguous mat
       .getByRole("tabpanel", { name: "Overview", exact: true })
       .getByText("Residential and Postal Address", { exact: true }),
   ).toHaveCount(1);
+});
+
+test("investment table cells are not counted as standalone controls in legacy sessions", async ({
+  page,
+}) => {
+  const tableRows = Array.from({ length: 8 }, (_, i) => [
+    i === 0 ? "Greencape High Conviction Fund" : "",
+    i === 0 ? "HOW0035AU" : "",
+    i === 0 ? "$25,000" : "$",
+    "$",
+    "",
+    i === 0 ? "X" : "",
+  ]);
+  const selections = tableRows.flatMap((_, i) =>
+    ["Reinvest", "Cash payment"].map((option, j) => ({
+      id: `cell-${i}-${j}`,
+      type: "checkbox",
+      label: `${option} – Row ${i + 1}${i === 0 ? " (Greencape High Conviction Fund)" : ""}`,
+      group: `distribution_option_row${i + 1}`,
+      state: i === 0 && j === 1 ? "CHECKED" : "UNCHECKED",
+      confidence: "HIGH",
+    })),
+  );
+  const realControls = [
+    {
+      id: "adviser-yes",
+      type: "checkbox",
+      label: "Applicant is within the target market",
+      state: "CHECKED",
+      confidence: "HIGH",
+    },
+    {
+      id: "adviser-no",
+      type: "checkbox",
+      label: "Applicant is outside the target market",
+      state: "UNCHECKED",
+      confidence: "HIGH",
+    },
+  ];
+  const controls = [...selections, ...realControls];
+  let calls = 0;
+  await page.route("https://api.anthropic.com/v1/messages", async (route) => {
+    calls++;
+    const body = route.request().postDataJSON();
+    const prompt = body.messages[0].content[1].text;
+    const audit = prompt.includes("checkbox/radio auditor");
+    expect(prompt).toContain(
+      audit
+        ? "Table grid cells are not checkbox/radio widgets"
+        : "A whole grid cell is NOT a checkbox",
+    );
+    const data = audit
+      ? {
+          controls: controls.map((c) => ({
+            ...c,
+            verified_state: c.id === "cell-0-1" ? "AMBIGUOUS" : c.state,
+          })),
+          missed_controls: [],
+        }
+      : {
+          page_type: "form",
+          fields: [],
+          controls,
+          tables: [
+            {
+              title: "Investment and distribution method",
+              headers: [
+                "Fund Name",
+                "APIR Code",
+                "Investment amount",
+                "Regular investment plan",
+                "Distribution options - Reinvest",
+                "Distribution options - Cash payment",
+              ],
+              rows: tableRows,
+            },
+          ],
+        };
+    await route.fulfill({
+      json: { content: [{ type: "text", text: JSON.stringify(data) }] },
+    });
+  });
+  await page.goto("/");
+  await page.getByLabel("Anthropic API key").fill("test-key");
+  await page
+    .getByLabel("Upload PDF", { exact: true })
+    .setInputFiles({
+      name: "investment.pdf",
+      mimeType: "application/pdf",
+      buffer: pdf(),
+    });
+  await page
+    .getByRole("button", { name: "Extract page 1", exact: true })
+    .first()
+    .click();
+  const overview = page.getByRole("tabpanel", {
+    name: "Overview",
+    exact: true,
+  });
+  await expect(
+    page.getByRole("tab", { name: "Controls (2)", exact: true }),
+  ).toBeVisible();
+  await expect(
+    overview
+      .getByRole("region", { name: "Checkboxes and radio buttons" })
+      .getByText("Applicant is within the target market", { exact: true }),
+  ).toBeVisible();
+  await expect(overview.getByText(/Reinvest – Row/)).toHaveCount(0);
+  await expect(
+    overview.getByText("Greencape High Conviction Fund", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    overview.getByRole("cell", { name: "X", exact: false }),
+  ).toContainText("Table selection needs review");
+  await page.getByRole("tab", { name: "Controls (2)", exact: true }).click();
+  const tab = page.getByRole("tabpanel", { name: "Controls (2)", exact: true });
+  await expect(tab.getByText(/Row 1/)).toHaveCount(0);
+  await expect(
+    tab.getByText("Applicant is outside the target market", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "JSON", exact: true }).click();
+  await expect(
+    page.getByRole("tabpanel", { name: "JSON", exact: true }),
+  ).toContainText("distribution_option_row1");
+  await expect(
+    page.getByText("Session saved in this browser", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Open session investment.pdf", exact: true })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Controls (2)", exact: true }),
+  ).toBeVisible();
+  expect(calls).toBe(2);
 });

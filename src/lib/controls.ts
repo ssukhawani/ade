@@ -1,5 +1,5 @@
 import type { PageResult } from "./extraction";
-export function controlRows(result: PageResult) {
+function allControlRows(result: PageResult) {
   const extracted = (result.controls || []).map((c, index) => {
     const verification = result.verification?.controls?.find(
       (v: any) => v.id === c.id,
@@ -8,6 +8,7 @@ export function controlRows(result: PageResult) {
       key: `extracted-${index}`,
       label: c.label || c.id,
       type: c.type,
+      visualKind: c.visual_kind,
       group: c.group || "Other controls",
       state: c.state,
       verifiedState: verification?.verified_state as string | undefined,
@@ -28,6 +29,7 @@ export function controlRows(result: PageResult) {
       key: `additional-${index}`,
       label: c.label || "Unlabelled control",
       type: c.type || "checkbox",
+      visualKind: c.visual_kind as string | undefined,
       group: c.group || "Additional controls found by verification",
       state: c.state as string,
       verifiedState: undefined,
@@ -40,7 +42,48 @@ export function controlRows(result: PageResult) {
   return [...extracted, ...additional] as Array<(typeof extracted)[number]>;
 }
 
-export type ControlRow = ReturnType<typeof controlRows>[number];
+export type ControlRow = ReturnType<typeof allControlRows>[number];
+
+// Compatibility for older saved responses which called bare table selection cells checkboxes.
+// Require an explicit row number, a unique selection-column match, and an existing cell.
+// Explicit evidence of a real checkbox/radio always takes precedence.
+function selectionCell(result: PageResult, control: ControlRow) {
+  if (control.visualKind === "checkbox" || control.visualKind === "radio")
+    return null;
+  const match = control.label.match(
+    /^(.+?)\s*[-–—]\s*Row\s+(\d+)(?:\s*\([^)]*\))?\s*$/i,
+  );
+  if (!match) return null;
+  const option = normalized(match[1]);
+  const row = Number(match[2]) - 1;
+  const matches: string[] = [];
+  (result.tables || []).forEach((table: any, ti: number) => {
+    if (!Array.isArray(table.rows) || !table.rows[row]) return;
+    (table.headers || []).forEach((header: unknown, ci: number) => {
+      const text = normalized(header);
+      if (
+        /\b(distribution options?|selection|choice)\b/.test(text) &&
+        text.endsWith(` ${option}`) &&
+        ci < tableCells(table.rows[row]).length
+      )
+        matches.push(`${ti}:${row}:${ci}`);
+    });
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+export function tableCellSelections(result: PageResult) {
+  const cells = new Map<string, ControlRow[]>();
+  for (const control of allControlRows(result)) {
+    const cell = selectionCell(result, control);
+    if (cell) cells.set(cell, [...(cells.get(cell) || []), control]);
+  }
+  return cells;
+}
+export function controlRows(result: PageResult) {
+  return allControlRows(result).filter(
+    (control) => !selectionCell(result, control),
+  );
+}
 export function tableCells(row: unknown): unknown[] {
   return Array.isArray(row)
     ? row
