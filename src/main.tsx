@@ -36,6 +36,7 @@ import {
   defaultRates,
   validRate,
   estimate,
+  estimateReplicate,
   summarize,
   costLabel,
   money,
@@ -59,8 +60,26 @@ import {
   type PdfSession,
   type SessionSummary,
 } from "./lib/sessions";
+import {
+  inspectModel,
+  replicate,
+  OCR_PROMPT,
+  type CallMetadata,
+} from "./lib/replicate";
+import {
+  REPLICATE_MODELS,
+  replicateRates,
+  modelDefinition,
+  isOCR,
+  type Provider,
+  type ModelConfig,
+  type PricingKind,
+} from "./lib/models";
 import { CostSummary } from "./components/cost-summary";
-function readPrices(): Record<string, { input: string; output: string }> {
+function readPrices(): Record<
+  string,
+  { input: string; output: string; fixed?: string; kind?: PricingKind }
+> {
   try {
     const saved = JSON.parse(localStorage.getItem("ade-prices") || "{}");
     return saved && typeof saved === "object" && !Array.isArray(saved)
@@ -72,9 +91,13 @@ function readPrices(): Record<string, { input: string; output: string }> {
 }
 
 const KEY_STORAGE = "ade-api-key";
-function readKey() {
+function readKey(provider: Provider = "anthropic") {
   try {
-    return localStorage.getItem(KEY_STORAGE) || "";
+    return (
+      localStorage.getItem(
+        provider === "anthropic" ? KEY_STORAGE : "ade-replicate-api-key",
+      ) || ""
+    );
   } catch {
     return "";
   }
@@ -87,6 +110,47 @@ function needsReview(result?: PageResult) {
   );
 }
 function App() {
+  const [provider, setProvider] = useState<Provider>("anthropic");
+  const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
+  const [modelMessage, setModelMessage] = useState("");
+  const [documentHash, setDocumentHash] = useState("");
+  function changeProvider(next: Provider) {
+    setProvider(next);
+    setKey(readKey(next));
+    setSavedKey(readKey(next));
+    setStorageMessage("");
+    setModelConfig(null);
+    setModelMessage("");
+    setShowKey(false);
+    setModel(
+      next === "anthropic" ? "claude-sonnet-5" : "google/gemini-3-flash",
+    );
+  }
+  function changeModel(next: string) {
+    setModel(next);
+    setModelConfig(null);
+    setModelMessage("");
+    setPriceMessage("");
+  }
+  async function checkModel() {
+    if (lock.current || !key.trim()) return;
+    lock.current = true;
+    setBusy(true);
+    setModelMessage("Checking model schema…");
+    try {
+      const config = await inspectModel(key.trim(), model.trim());
+      setModelConfig(config);
+      setModelMessage(
+        `Ready · ${config.mode === "ocr" ? "native OCR (one pass)" : "vision extraction + verification (two passes)"}`,
+      );
+    } catch (e) {
+      setModelConfig(null);
+      setModelMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
   const [key, setKey] = useState(readKey);
   const [savedKey, setSavedKey] = useState(readKey);
   const [settings, setSettings] = useState(() => !readKey());
@@ -96,17 +160,33 @@ function App() {
   const [prices, setPrices] = useState(readPrices);
   const [charges, setCharges] = useState<Charge[]>([]);
   const [priceMessage, setPriceMessage] = useState("");
-  const defaults = defaultRates(model.trim());
-  const price = prices[model.trim()] || {
+  const defaults =
+    provider === "replicate"
+      ? replicateRates(model.trim())
+      : defaultRates(model.trim());
+  const priceKey =
+    provider === "replicate" ? `replicate:${model.trim()}` : model.trim();
+  const modelPricing = modelDefinition(model.trim())?.pricing;
+  const price = prices[priceKey] || {
     input: defaults ? String(defaults.input) : "",
     output: defaults ? String(defaults.output) : "",
+    fixed: modelPricing?.usd !== undefined ? String(modelPricing.usd) : "",
+    kind: modelPricing?.kind || "tokens",
   };
   const rates =
     validRate(price.input) && validRate(price.output)
       ? { input: Number(price.input), output: Number(price.output) }
       : null;
-  function changePrice(field: "input" | "output", value: string) {
-    const next = { ...prices, [model.trim()]: { ...price, [field]: value } };
+  const pricingKind: PricingKind =
+    provider === "anthropic"
+      ? "tokens"
+      : price.kind || modelPricing?.kind || "tokens";
+  const unitRate = validRate(price.fixed || "") ? Number(price.fixed) : null;
+  function changePrice(
+    field: "input" | "output" | "fixed" | "kind",
+    value: string,
+  ) {
+    const next = { ...prices, [priceKey]: { ...price, [field]: value } };
     setPrices(next);
     try {
       localStorage.setItem("ade-prices", JSON.stringify(next));
@@ -194,6 +274,9 @@ function App() {
       pageCount: pages.length,
       currentPage: current,
       model,
+      provider,
+      modelConfig,
+      documentHash,
       results,
       charges,
       errors,
@@ -202,7 +285,18 @@ function App() {
   useEffect(() => {
     const data = snapshot();
     if (data && file) void enqueueSave(data, file);
-  }, [sessionId, file, results, charges, errors, current, model]);
+  }, [
+    sessionId,
+    file,
+    results,
+    charges,
+    errors,
+    current,
+    model,
+    provider,
+    modelConfig,
+    documentHash,
+  ]);
   async function openSaved(id: string) {
     if (lock.current) return;
     lock.current = true;
@@ -225,7 +319,10 @@ function App() {
       setCharges(saved.session.charges);
       setErrors(saved.session.errors);
       setCurrent(Math.min(saved.session.currentPage, rendered.length - 1));
+      changeProvider(saved.session.provider || "anthropic");
       setModel(saved.session.model);
+      setModelConfig(saved.session.modelConfig || null);
+      setDocumentHash(saved.session.documentHash || "");
       setSessionId(id);
       setProgress({ done: 0, total: 0 });
       setStatus(
@@ -287,7 +384,10 @@ function App() {
   const completed = Object.keys(results).length;
   function saveKey() {
     try {
-      localStorage.setItem(KEY_STORAGE, key.trim());
+      localStorage.setItem(
+        provider === "anthropic" ? KEY_STORAGE : "ade-replicate-api-key",
+        key.trim(),
+      );
       setKey(key.trim());
       setSavedKey(key.trim());
       setStorageMessage("API key saved in this browser.");
@@ -299,7 +399,9 @@ function App() {
   }
   function forgetKey() {
     try {
-      localStorage.removeItem(KEY_STORAGE);
+      localStorage.removeItem(
+        provider === "anthropic" ? KEY_STORAGE : "ade-replicate-api-key",
+      );
       setKey("");
       setSavedKey("");
       setStorageMessage("Saved API key removed.");
@@ -323,6 +425,8 @@ function App() {
     setSessionId(null);
     setSaveStatus("");
     setFile(f);
+    setDocumentHash("");
+    setModelConfig(null);
     setPages([]);
     setResults({});
     setCharges([]);
@@ -330,6 +434,12 @@ function App() {
     setCurrent(0);
     setProgress({ done: 0, total: 0 });
     try {
+      const hash = await crypto.subtle.digest("SHA-256", await f.arrayBuffer());
+      setDocumentHash(
+        [...new Uint8Array(hash)]
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""),
+      );
       const rendered = await renderPages(f, setStatus);
       setPages(rendered);
       createdAt.current = new Date().toISOString();
@@ -352,6 +462,30 @@ function App() {
     stop.current = false;
     setBusy(true);
     setProgress({ done: 0, total: indices.length });
+    let config = modelConfig;
+    if (
+      provider === "replicate" &&
+      (!config || config.model !== model.trim())
+    ) {
+      try {
+        setStatus("Checking Replicate model inputs…");
+        config = await inspectModel(key.trim(), model.trim());
+        setModelConfig(config);
+      } catch (e) {
+        setStatus(e instanceof Error ? e.message : String(e));
+        setBusy(false);
+        lock.current = false;
+        return;
+      }
+    }
+    const execute = (
+      prompt: string,
+      onUsage: (usage: Usage | null, meta?: CallMetadata) => void,
+      image: string,
+    ) =>
+      provider === "replicate"
+        ? replicate(key.trim(), image, prompt, config!, onUsage)
+        : claude(key.trim(), image, prompt, model.trim(), onUsage);
     let count = 0,
       failed = 0;
     for (const i of indices) {
@@ -362,26 +496,37 @@ function App() {
         delete next[i];
         return next;
       });
-      const recordUsage = (pass: Charge["pass"]) => (usage: Usage | null) => {
-        const charge: Charge = {
-          page: i + 1,
-          pass,
-          model: model.trim(),
-          timestamp: new Date().toISOString(),
-          usage,
-          rates,
-          costUsd: estimate(usage, rates),
+      const recordUsage =
+        (pass: Charge["pass"]) =>
+        (usage: Usage | null, meta: CallMetadata = {}) => {
+          const charge: Charge = {
+            page: i + 1,
+            pass,
+            provider,
+            pricingKind,
+            unitRate,
+            pricingSource:
+              provider === "replicate"
+                ? `${prices[priceKey] ? "User rate override" : model === "openai/gpt-5.6-luna" ? "Replicate model page checked 2026-09-28" : "Replicate / benchmark snapshot"}; ${modelPricing?.note || "confirm model-page pricing"}`
+                : PRICING_URL,
+            ...meta,
+            model: model.trim(),
+            timestamp: new Date().toISOString(),
+            usage,
+            rates,
+            costUsd:
+              provider === "replicate"
+                ? estimateReplicate(usage, rates, pricingKind, unitRate, meta)
+                : estimate(usage, rates),
+          };
+          setCharges((old) => [...old, charge]);
         };
-        setCharges((old) => [...old, charge]);
-      };
       try {
         setStatus(`Page ${i + 1} · extracting content`);
-        const extraction = await claude(
-          key.trim(),
-          pages[i],
+        const extraction: any = await execute(
           extractionPrompt,
-          model.trim(),
           recordUsage("extraction"),
+          pages[i],
         );
         if (
           !Array.isArray(extraction.fields) ||
@@ -390,14 +535,15 @@ function App() {
           throw new Error(
             "Invalid extraction response. Please retry this page.",
           );
-        setStatus(`Page ${i + 1} · verifying checkboxes`);
-        const verification = await claude(
-          key.trim(),
-          pages[i],
-          verifyPrompt(extraction.controls),
-          model.trim(),
-          recordUsage("verification"),
-        );
+        let verification: any = { controls: [], not_applicable: true };
+        if (config?.mode !== "ocr") {
+          setStatus(`Page ${i + 1} · verifying checkboxes`);
+          verification = await execute(
+            verifyPrompt(extraction.controls),
+            recordUsage("verification"),
+            pages[i],
+          );
+        }
         if (!Array.isArray(verification.controls))
           throw new Error(
             "Invalid verification response. Please retry this page.",
@@ -408,6 +554,10 @@ function App() {
             ...extraction,
             page: i + 1,
             verification,
+            provider,
+            workflow: config?.mode === "ocr" ? "native-ocr" : "vision-two-pass",
+            modelConfig: config,
+            promptVersion: "ade-vision-v2-table-controls",
             model: model.trim(),
             extractedAt: new Date().toISOString(),
           },
@@ -442,6 +592,23 @@ function App() {
         JSON.stringify(
           {
             sessionId,
+            experiment: {
+              provider,
+              model,
+              modelConfig,
+              documentSha256: documentHash,
+              promptVersion: "ade-vision-v2-table-controls",
+              workflow:
+                provider === "replicate" && isOCR(model)
+                  ? "native-ocr"
+                  : "vision-two-pass",
+              render: { scale: 2, jpegQuality: 0.92 },
+              prompts: {
+                extraction: extractionPrompt,
+                verificationExample: verifyPrompt([]),
+                nativeOCR: OCR_PROMPT,
+              },
+            },
             file: file?.name,
             createdAt: new Date().toISOString(),
             costing: {
@@ -467,10 +634,14 @@ function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${file?.name || "document"}.extraction.json`;
+    link.download =
+      provider === "anthropic"
+        ? `${file?.name || "document"}.extraction.json`
+        : `${file?.name || "document"}.${model.replace(/[^a-zA-Z0-9.-]/g, "-")}.${sessionId?.slice(0, 8)}.extraction.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  const modelLocked = charges.length > 0 || Object.keys(results).length > 0;
   const ready = !busy && !!key.trim() && !!model.trim() && pages.length > 0;
   return (
     <div className="min-h-screen">
@@ -577,13 +748,50 @@ function App() {
                 <X />
               </Button>
             </div>
+            <div className="mb-4 flex flex-wrap items-end gap-3">
+              <div>
+                <label
+                  htmlFor="provider"
+                  className="mb-2 block text-xs font-medium"
+                >
+                  Provider
+                </label>
+                <select
+                  id="provider"
+                  value={provider}
+                  disabled={busy || modelLocked}
+                  onChange={(e) => changeProvider(e.target.value as Provider)}
+                  className="h-9 rounded-md border bg-white px-3 text-sm"
+                >
+                  <option value="anthropic">Anthropic direct</option>
+                  <option value="replicate">Replicate</option>
+                </select>
+              </div>
+              {file && (
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => load(file)}
+                >
+                  New model experiment
+                </Button>
+              )}
+              {modelLocked && (
+                <p className="text-xs text-muted-foreground">
+                  Provider and model are locked for this experiment. Start a new
+                  experiment to compare another model.
+                </p>
+              )}
+            </div>
             <div className="grid items-end gap-4 md:grid-cols-[2fr_1fr_auto]">
               <div>
                 <label
                   htmlFor="api-key"
                   className="mb-2 block text-xs font-medium"
                 >
-                  Anthropic API key
+                  {provider === "anthropic"
+                    ? "Anthropic API key"
+                    : "Replicate API key"}
                 </label>
                 <div className="relative">
                   <Input
@@ -594,7 +802,7 @@ function App() {
                       setKey(e.target.value);
                       setStorageMessage("");
                     }}
-                    placeholder="sk-ant-…"
+                    placeholder={provider === "anthropic" ? "sk-ant-…" : "r8_…"}
                     autoComplete="off"
                     disabled={busy}
                     className="pr-10"
@@ -617,12 +825,50 @@ function App() {
                 >
                   Model
                 </label>
-                <Input
-                  id="model"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  disabled={busy}
-                />
+                {provider === "anthropic" ? (
+                  <Input
+                    id="model"
+                    value={model}
+                    onChange={(e) => changeModel(e.target.value)}
+                    disabled={busy || modelLocked}
+                  />
+                ) : (
+                  <>
+                    <select
+                      id="model"
+                      value={
+                        REPLICATE_MODELS.some(([id]) => id === model)
+                          ? model
+                          : "custom"
+                      }
+                      onChange={(e) =>
+                        changeModel(
+                          e.target.value === "custom" ? "" : e.target.value,
+                        )
+                      }
+                      disabled={busy || modelLocked}
+                      className="h-9 w-full rounded-md border bg-white px-3 text-sm"
+                    >
+                      {REPLICATE_MODELS.map(([id, label]) => (
+                        <option key={id} value={id}>
+                          {label}
+                          {isOCR(id) ? " · native OCR" : ""}
+                        </option>
+                      ))}
+                      <option value="custom">Custom Replicate model</option>
+                    </select>
+                    {!REPLICATE_MODELS.some(([id]) => id === model) && (
+                      <Input
+                        aria-label="Custom Replicate model"
+                        className="mt-2"
+                        placeholder="owner/model"
+                        value={model}
+                        disabled={busy || modelLocked}
+                        onChange={(e) => changeModel(e.target.value)}
+                      />
+                    )}
+                  </>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button
@@ -648,13 +894,85 @@ function App() {
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
               Saved keys stay in this browser’s local storage, accessible to
-              scripts on this site. Use a local test key. Page images are sent
-              directly to Anthropic.
+              scripts on this site.{" "}
+              {provider === "anthropic"
+                ? "Page images are sent directly to Anthropic."
+                : "Page images pass through the localhost relay to Replicate. PDF sessions remain in IndexedDB."}
             </p>
+            {provider === "replicate" && (
+              <div className="mt-3 space-y-2">
+                <Button
+                  variant="outline"
+                  disabled={busy || !key.trim() || !model.trim() || modelLocked}
+                  onClick={checkModel}
+                >
+                  Check model
+                </Button>
+                <p role="status" className="text-xs">
+                  {modelMessage ||
+                    (modelConfig
+                      ? "Model schema saved with session."
+                      : "Schema is checked before the first paid prediction.")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isOCR(model)
+                    ? "Native OCR: one transcription pass; no structured checkbox verification. Compare separately from two-pass vision runs."
+                    : "Same page images and extraction/verification prompts as the Claude workflow."}
+                </p>
+              </div>
+            )}
             <div className="mt-5 border-t pt-4">
-              <h3 className="text-sm font-semibold">
-                Cost estimates · USD per million tokens
-              </h3>
+              <h3 className="text-sm font-semibold">Cost estimates · USD</h3>
+              {provider === "replicate" && (
+                <div className="mt-3">
+                  <label htmlFor="pricing-kind" className="mb-2 block text-xs">
+                    Billing basis
+                  </label>
+                  <select
+                    id="pricing-kind"
+                    value={pricingKind}
+                    disabled={busy}
+                    onChange={(e) => changePrice("kind", e.target.value)}
+                    className="h-9 rounded-md border bg-white px-3 text-sm"
+                  >
+                    {[
+                      "tokens",
+                      "fixed_per_run",
+                      "per_page",
+                      "output_tokens_only",
+                      "per_second",
+                      "unknown",
+                    ].map((kind) => (
+                      <option key={kind} value={kind}>
+                        {kind.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {["fixed_per_run", "per_page", "per_second"].includes(
+                pricingKind,
+              ) && (
+                <div className="mt-3">
+                  <label htmlFor="unit-price" className="mb-2 block text-xs">
+                    USD per{" "}
+                    {pricingKind === "per_second"
+                      ? "compute second"
+                      : pricingKind === "per_page"
+                        ? "page"
+                        : "prediction"}
+                  </label>
+                  <Input
+                    id="unit-price"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={price.fixed || ""}
+                    disabled={busy}
+                    onChange={(e) => changePrice("fixed", e.target.value)}
+                  />
+                </div>
+              )}
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>
                   <label htmlFor="input-price" className="mb-2 block text-xs">
@@ -688,21 +1006,29 @@ function App() {
                 </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                {defaults
-                  ? "Sonnet 5 defaults: $2 input / $10 output, checked September 28, 2026. "
-                  : "Enter your model’s rates to enable dollar estimates. "}
+                {provider === "replicate"
+                  ? `Replicate estimates: ${model === "openai/gpt-5.6-sol" ? "Enter current rates; the published promotional pricing has expired." : modelPricing?.note || "Confirm the rates on the model page."} `
+                  : defaults
+                    ? "Sonnet 5 defaults: $2 input / $10 output, checked September 28, 2026. "
+                    : "Enter your model’s rates to enable dollar estimates. "}
                 <a
-                  href={PRICING_URL}
+                  href={
+                    provider === "replicate"
+                      ? `https://replicate.com/${model}`
+                      : PRICING_URL
+                  }
                   target="_blank"
                   rel="noreferrer"
                   className="underline"
                 >
-                  Anthropic pricing
+                  {provider === "replicate"
+                    ? "Replicate model pricing"
+                    : "Anthropic pricing"}
                 </a>
                 . Estimates use reported usage from both passes, including image
                 tokens. Rates are captured per call.
               </p>
-              {!rates && (
+              {pricingKind === "tokens" && !rates && (
                 <p className="mt-2 text-xs text-amber-700">
                   Set valid non-negative rates to calculate costs. Token usage
                   is still tracked.
@@ -792,8 +1118,9 @@ function App() {
                       {file?.name}
                     </h3>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {pages.length} pages <span className="mx-1">·</span>{" "}
-                      {completed} extracted <span className="mx-1">·</span>{" "}
+                      {provider} · {model} · {pages.length} pages{" "}
+                      <span className="mx-1">·</span> {completed} extracted{" "}
+                      <span className="mx-1">·</span>{" "}
                       {Object.values(results).filter(needsReview).length} to
                       review
                     </p>
@@ -964,7 +1291,9 @@ function App() {
                         : result
                           ? needsReview(result)
                             ? "Review needed"
-                            : "Extracted"
+                            : result.verification?.not_applicable
+                              ? "OCR only"
+                              : "Extracted"
                           : "Not extracted"}
                   </Badge>
                 </div>
@@ -1024,6 +1353,22 @@ function App() {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="overview">
+                        {result.verification?.not_applicable && (
+                          <div className="mb-4 rounded-lg border bg-zinc-50 p-3">
+                            <h4 className="text-sm font-semibold">
+                              Native OCR output · no checkbox verification
+                            </h4>
+                            <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+                              {typeof (result as any).rawOutput === "string"
+                                ? (result as any).rawOutput
+                                : JSON.stringify(
+                                    (result as any).rawOutput,
+                                    null,
+                                    2,
+                                  )}
+                            </pre>
+                          </div>
+                        )}
                         <div className="mb-5 grid grid-cols-3 gap-2">
                           {[
                             ["Fields", result.fields.length],
@@ -1124,7 +1469,10 @@ function App() {
         <footer className="mt-5 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="size-3.5" />
-            Local workspace · Direct Anthropic connection
+            Local workspace ·{" "}
+            {provider === "anthropic"
+              ? "Direct Anthropic connection"
+              : "Replicate via localhost relay"}
           </span>
           <span>
             {saveStatus || "PDF sessions are saved locally in this browser."}

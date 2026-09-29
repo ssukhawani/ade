@@ -21,11 +21,24 @@ export function CostSummary({
         </span>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        {summary.calls} calls · {summary.inputTokens.toLocaleString()} input /{" "}
+        {summary.calls} calls ·{" "}
+        {summary.timedCalls
+          ? `${(summary.durationMs / 1000).toFixed(2)}s measured · `
+          : ""}{" "}
+        {summary.inputTokens.toLocaleString()} input /{" "}
         {summary.outputTokens.toLocaleString()} output tokens reported
       </p>
+      {!details && summary.timedCalls > 0 && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {summary.averageSecondsPerAttemptedPage?.toFixed(2)}s per attempted
+          page, including retries and both vision passes. Rendering time
+          excluded.
+        </p>
+      )}
       <p className="mt-2 text-xs text-muted-foreground">
-        Includes both passes and all re-extractions for this upload. Saved with this PDF session in browser history.
+        Includes all calls and re-extractions for this upload. Vision uses two
+        passes; native OCR uses one. Saved with this PDF session in browser
+        history.
       </p>
       {summary.unknownCalls > 0 && (
         <p className="mt-2 text-xs text-amber-700">
@@ -50,13 +63,24 @@ export function CostSummary({
                   </span>
                 </div>
                 <p className="mt-1 break-words text-muted-foreground">
-                  {c.model} ·{" "}
+                  {c.provider || "anthropic"} · {c.model} ·{" "}
+                  {c.durationMs !== undefined
+                    ? `${(c.durationMs / 1000).toFixed(2)}s · `
+                    : ""}{" "}
                   {c.usage
                     ? `${c.usage.input_tokens} input / ${c.usage.output_tokens} output tokens`
                     : "Usage unavailable"}
-                  {c.rates
-                    ? ` · $${c.rates.input} / $${c.rates.output} per 1M`
-                    : " · Rates not set"}
+                  {c.pricingKind &&
+                  ["fixed_per_run", "per_page", "per_second"].includes(
+                    c.pricingKind,
+                  )
+                    ? ` · ${c.unitRate === null || c.unitRate === undefined ? "Rate not set" : `$${c.unitRate}`} ${c.pricingKind.replaceAll("_", " ")}`
+                    : c.rates
+                      ? ` · $${c.rates.input} / $${c.rates.output} per 1M`
+                      : " · Rates not set"}
+                  {c.predictionId && (
+                    <span className="block">Prediction: {c.predictionId}</span>
+                  )}
                 </p>
               </div>
             ))}

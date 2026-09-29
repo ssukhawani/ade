@@ -1,25 +1,6 @@
 import { test, expect } from "@playwright/test";
-function pdf() {
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << >> >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 500] /Resources << >> >>",
-  ];
-  let content = "%PDF-1.4\n";
-  const offsets = [0];
-  objects.forEach((o, i) => {
-    offsets.push(Buffer.byteLength(content));
-    content += `${i + 1} 0 obj\n${o}\nendobj\n`;
-  });
-  const xref = Buffer.byteLength(content);
-  content += "xref\n0 5\n0000000000 65535 f \n";
-  offsets
-    .slice(1)
-    .forEach((n) => (content += `${String(n).padStart(10, "0")} 00000 n \n`));
-  content += `trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return Buffer.from(content);
-}
+import { pdf } from "./fixtures";
+
 test("saved key, per-page extraction, preservation, all pages, errors, export and reset", async ({
   page,
 }) => {
@@ -227,16 +208,26 @@ test("costs retain failed-response usage and per-call rates; unknown models have
   expect(exported.costing.calls[0].rates.input).toBe(2);
   expect(exported.costing.calls[2].rates.input).toBe(4);
   expect(exported.costing.byPage[0].costUsd).toBeCloseTo(0.018);
+  await expect(page.getByLabel("Model", { exact: true })).toBeDisabled();
+  await page
+    .getByRole("button", { name: "New model experiment", exact: true })
+    .click();
+  await expect(page.getByText("2 pages ready for extraction")).toBeVisible();
   await page.getByLabel("Model", { exact: true }).fill("custom-model");
   await expect(
     page.getByLabel("Input price / 1M tokens", { exact: true }),
   ).toHaveValue("");
   await page
-    .getByRole("button", { name: "Re-extract page 1", exact: true })
+    .getByRole("button", { name: "Extract page 1", exact: true })
+    .first()
     .click();
   await expect(
     page.getByRole("region", { name: "PDF total so far" }),
-  ).toContainText("$0.018000 + unknown");
+  ).toContainText("Unavailable");
+  await page
+    .getByRole("button", { name: "New model experiment", exact: true })
+    .click();
+  await expect(page.getByText("2 pages ready for extraction")).toBeVisible();
   await page.getByLabel("Model", { exact: true }).fill("claude-sonnet-5");
   await expect(
     page.getByLabel("Input price / 1M tokens", { exact: true }),
@@ -764,13 +755,11 @@ test("investment table cells are not counted as standalone controls in legacy se
   });
   await page.goto("/");
   await page.getByLabel("Anthropic API key").fill("test-key");
-  await page
-    .getByLabel("Upload PDF", { exact: true })
-    .setInputFiles({
-      name: "investment.pdf",
-      mimeType: "application/pdf",
-      buffer: pdf(),
-    });
+  await page.getByLabel("Upload PDF", { exact: true }).setInputFiles({
+    name: "investment.pdf",
+    mimeType: "application/pdf",
+    buffer: pdf(),
+  });
   await page
     .getByRole("button", { name: "Extract page 1", exact: true })
     .first()

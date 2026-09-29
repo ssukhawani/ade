@@ -1,3 +1,4 @@
+import type { Provider, ModelConfig } from "./models";
 import type { PageResult } from "./extraction";
 import { summarize, type Charge } from "./costs";
 export type PdfSession = {
@@ -8,6 +9,9 @@ export type PdfSession = {
   pageCount: number;
   currentPage: number;
   model: string;
+  provider?: Provider;
+  modelConfig?: ModelConfig | null;
+  documentHash?: string;
   results: Record<number, PageResult>;
   charges: Charge[];
   errors: Record<number, string>;
@@ -15,7 +19,13 @@ export type PdfSession = {
 export type SessionSummary = Pick<
   PdfSession,
   "id" | "name" | "createdAt" | "updatedAt" | "pageCount"
-> & { completed: number; costUsd: number; unknownCalls: number };
+> & {
+  provider?: Provider;
+  model?: string;
+  completed: number;
+  costUsd: number;
+  unknownCalls: number;
+};
 const DB_NAME = "ade-document-sessions";
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -71,6 +81,8 @@ export function saveSession(session: PdfSession, pdf?: File) {
   const summary: SessionSummary = {
     id: session.id,
     name: session.name,
+    provider: session.provider || "anthropic",
+    model: session.model,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     pageCount: session.pageCount,

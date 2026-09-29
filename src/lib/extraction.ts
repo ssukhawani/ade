@@ -1,3 +1,4 @@
+import type { CallMetadata } from "./replicate";
 import type { Usage } from "./costs";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -34,9 +35,10 @@ export async function claude(
   image: string,
   prompt: string,
   model: string,
-  onUsage?: (usage: Usage | null) => void,
+  onUsage?: (usage: Usage | null, meta?: CallMetadata) => void,
 ) {
   let recorded = false;
+  const started = performance.now();
   try {
     const base64 = image.split(",")[1];
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -71,7 +73,11 @@ export async function claude(
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     const j = await r.json();
     recorded = true;
-    onUsage?.(j.usage ?? null);
+    onUsage?.(j.usage ?? null, {
+      durationMs: performance.now() - started,
+      version: j.model,
+      status: "succeeded",
+    });
     const text =
       j.content
         ?.filter((x: any) => x.type === "text")
@@ -79,7 +85,11 @@ export async function claude(
         .join("") || "";
     return JSON.parse(text.replace(/^```json\s*/, "").replace(/```$/, ""));
   } catch (error) {
-    if (!recorded) onUsage?.(null);
+    if (!recorded)
+      onUsage?.(null, {
+        durationMs: performance.now() - started,
+        status: "unknown",
+      });
     throw error;
   }
 }

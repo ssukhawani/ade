@@ -50,6 +50,7 @@ export function SessionHistory({
                   )}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
+                  {s.provider || "anthropic"} · {s.model || "Legacy model"} ·{" "}
                   {s.completed}/{s.pageCount} pages extracted ·{" "}
                   {money(s.costUsd)}
                   {s.unknownCalls ? " + unknown" : ""} USD est.

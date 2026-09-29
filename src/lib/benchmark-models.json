@@ -1,0 +1,300 @@
+{
+  "gpt-5.6-sol": {
+    "model": "openai/gpt-5.6-sol",
+    "official": true,
+    "adapter": "openai",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 2.5,
+      "output_per_million": 15.0,
+      "note": "Snapshot from the original benchmark; reconcile with current Replicate billing before final reporting."
+    },
+    "params": {
+      "reasoning_effort": "high",
+      "verbosity": "low",
+      "max_completion_tokens": 6000
+    }
+  },
+  "claude-opus-4.6": {
+    "model": "anthropic/claude-opus-4.6",
+    "official": true,
+    "adapter": "claude",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 5.0,
+      "output_per_million": 25.0
+    },
+    "params": {
+      "max_tokens": 8192,
+      "max_image_resolution": 2.0
+    }
+  },
+  "gemini-3.1-pro": {
+    "model": "google/gemini-3.1-pro",
+    "official": true,
+    "adapter": "gemini",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 2.0,
+      "output_per_million": 12.0,
+      "note": "Snapshot from the original benchmark; reconcile with current Replicate billing before final reporting."
+    },
+    "params": {
+      "thinking_level": "high",
+      "temperature": 0,
+      "max_output_tokens": 8192
+    }
+  },
+  "gpt-5.4": {
+    "model": "openai/gpt-5.4",
+    "official": true,
+    "adapter": "openai",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 2.5,
+      "output_per_million": 15.0,
+      "note": "Snapshot from the original benchmark; reconcile with current Replicate billing before final reporting."
+    },
+    "params": {
+      "reasoning_effort": "high",
+      "verbosity": "low",
+      "max_completion_tokens": 6000
+    }
+  },
+  "claude-4.5-sonnet": {
+    "model": "anthropic/claude-4.5-sonnet",
+    "official": true,
+    "adapter": "claude",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 3.0,
+      "output_per_million": 15.0
+    },
+    "params": {
+      "max_tokens": 8192,
+      "max_image_resolution": 2.0
+    }
+  },
+  "glm-ocr": {
+    "model": "lucataco/glm-ocr",
+    "official": false,
+    "adapter": "glm",
+    "pricing": {
+      "kind": "fixed_per_run",
+      "usd": 0.001,
+      "note": "Placeholder estimate from the original benchmark; use actual billing for final reporting."
+    },
+    "params": {
+      "task": "text",
+      "max_new_tokens": 8192
+    }
+  },
+  "deepseek-ocr": {
+    "model": "lucataco/deepseek-ocr",
+    "official": false,
+    "adapter": "deepseek",
+    "pricing": {
+      "kind": "fixed_per_run",
+      "usd": 0.00098,
+      "note": "Approximate snapshot from the original benchmark."
+    },
+    "params": {
+      "task_type": "Free OCR",
+      "resolution_size": "Gundam (Recommended)",
+      "reference_text": ""
+    }
+  },
+  "datalab-ocr": {
+    "model": "datalab-to/ocr",
+    "official": true,
+    "adapter": "datalab",
+    "pricing": {
+      "kind": "per_page",
+      "usd": 0.002,
+      "note": "Snapshot from the original benchmark."
+    },
+    "params": {
+      "return_pages": true,
+      "visualize": false,
+      "skip_cache": true
+    }
+  },
+  "dots-ocr-confidence": {
+    "model": "mind-ware/dots-ocr-with-confidence",
+    "official": false,
+    "adapter": "dots",
+    "pricing": {
+      "kind": "fixed_per_run",
+      "usd": 0.011,
+      "note": "Approximate snapshot from the original benchmark."
+    },
+    "params": {
+      "prompt_mode": "custom",
+      "return_confidence": true,
+      "confidence_threshold": 0.7,
+      "max_tokens": 8192,
+      "temperature": 0.1,
+      "top_p": 0.9
+    }
+  },
+  "granite-vision-3.3-2b": {
+    "model": "ibm-granite/granite-vision-3.3-2b",
+    "official": true,
+    "adapter": "granite",
+    "pricing": {
+      "kind": "output_tokens_only",
+      "output_per_million": 0.25,
+      "note": "Snapshot from the original benchmark."
+    },
+    "params": {
+      "max_tokens": 4096,
+      "temperature": 0.0,
+      "top_p": 1.0,
+      "top_k": 1
+    }
+  },
+  "claude-sonnet-5": {
+    "model": "anthropic/claude-sonnet-5",
+    "official": true,
+    "adapter": "claude",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 2.0,
+      "output_per_million": 10.0,
+      "note": "Replicate model-page pricing checked 2026-09-10."
+    },
+    "params": {
+      "max_tokens": 8192,
+      "max_image_resolution": 2.0,
+      "effort": "high"
+    }
+  },
+  "claude-fable-5": {
+    "model": "anthropic/claude-fable-5",
+    "official": true,
+    "adapter": "claude",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 10.0,
+      "output_per_million": 50.0,
+      "note": "Replicate model-page pricing checked 2026-09-10."
+    },
+    "params": {
+      "max_tokens": 8192,
+      "max_image_resolution": 2.0
+    }
+  },
+  "claude-opus-4.7": {
+    "model": "anthropic/claude-opus-4.7",
+    "official": true,
+    "adapter": "claude",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 5.0,
+      "output_per_million": 25.0,
+      "note": "Current Anthropic list price; verify Replicate billing before final reporting."
+    },
+    "params": {
+      "max_tokens": 8192,
+      "max_image_resolution": 2.0
+    }
+  },
+  "claude-sonnet-4.6": {
+    "model": "anthropic/claude-sonnet-4.6",
+    "official": true,
+    "adapter": "claude",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 3.0,
+      "output_per_million": 15.0,
+      "note": "Replicate model-page pricing checked 2026-09-10."
+    },
+    "params": {
+      "max_tokens": 8192,
+      "max_image_resolution": 2.0
+    }
+  },
+  "gpt-5.6-terra": {
+    "model": "openai/gpt-5.6-terra",
+    "official": true,
+    "adapter": "openai",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 2.5,
+      "output_per_million": 15.0,
+      "note": "Replicate model-page pricing checked 2026-09-10."
+    },
+    "params": {
+      "reasoning_effort": "high",
+      "verbosity": "low",
+      "max_completion_tokens": 6000
+    }
+  },
+  "gpt-5.6-luna": {
+    "model": "openai/gpt-5.6-luna",
+    "official": true,
+    "adapter": "openai",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 0.2,
+      "output_per_million": 1.2,
+      "note": "Current OpenAI API pricing checked 2026-09-10; verify Replicate billing before final reporting."
+    },
+    "params": {
+      "reasoning_effort": "high",
+      "verbosity": "low",
+      "max_completion_tokens": 6000
+    }
+  },
+  "gemini-3.5-flash": {
+    "model": "google/gemini-3.5-flash",
+    "official": true,
+    "adapter": "gemini",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 1.5,
+      "output_per_million": 9.0,
+      "note": "Replicate model-page pricing checked 2026-09-10."
+    },
+    "params": {
+      "thinking_level": "high",
+      "temperature": 0,
+      "top_p": 0.95,
+      "max_output_tokens": 8192
+    }
+  },
+  "gemini-3-flash": {
+    "model": "google/gemini-3-flash",
+    "official": true,
+    "adapter": "gemini",
+    "pricing": {
+      "kind": "tokens",
+      "input_per_million": 0.5,
+      "output_per_million": 3.0,
+      "note": "Replicate model-page pricing checked 2026-09-10."
+    },
+    "params": {
+      "thinking_level": "high",
+      "temperature": 0,
+      "top_p": 0.95,
+      "max_output_tokens": 8192
+    }
+  },
+  "granite-vision-4.1-4b": {
+    "model": "ibm-granite/granite-vision-4.1-4b",
+    "official": true,
+    "adapter": "granite",
+    "pricing": {
+      "kind": "unknown",
+      "note": "Pricing is not hard-coded because current Replicate pricing was not exposed reliably in the retrieved model documentation. Use actual Replicate billing."
+    },
+    "params": {
+      "max_completion_tokens": 8192,
+      "temperature": 0.0,
+      "top_p": 0.9,
+      "top_k": 50,
+      "stream": false,
+      "add_generation_prompt": true
+    }
+  }
+}
