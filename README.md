@@ -36,6 +36,16 @@ Two model passes agreeing does not prove correctness. Manually compare against t
 
 Future production path: browser → backend → LiteLLM → AWS Bedrock AU, with persisted jobs/results, retries and human review.
 
+## Hosting readiness and AU testing
+
+The current application is tested for local use. A static Vercel deployment can serve the UI, but will not run the Vite Replicate relay. Before hosted extraction testing, implement a server-side API route for the fixed Replicate upstream, protect access to the deployment, and handle hosted request size and timeout limits. Vercel Functions have a 4.5 MB request/response limit, smaller than the local relay's 16 MB limit; base64 page images count toward it. See [Vite on Vercel](https://vercel.com/docs/frameworks/frontend/vite) and [function limits](https://vercel.com/docs/functions/limitations).
+
+Browser sessions and saved keys belong to their origin. Existing localhost sessions will not automatically appear on a Vercel hostname. Use synthetic or redacted PDFs for third-party hosted testing; the corporate POC requires document processing to stay in Australia, which a Vercel region setting alone does not establish for downstream providers.
+
+The next corporate vision adapter must use the supplied **LiteLLM gateway**, with its OpenAI-compatible HTTP interface and a spend-limited gateway key. Direct Bedrock access is explicitly denied in the infrastructure handover. Gateway URL, externally visible model aliases, pricing, and network reachability still need to be confirmed before live integration. Keep the existing per-session provider/model isolation, two-pass vision prompts, usage ledger, and exports for comparable experiments. Missing gateway pricing or usage must remain unknown, never zero.
+
+Textract is a separate adapter using AWS SSO and the provisioned Sydney S3 bucket. Start with one small multi-page asynchronous analysis under the user's credentials before batch testing. Implement polling and throttling backoff, preserve source PDFs independently of the scratch bucket's lifecycle, and keep corporate credentials and infrastructure handover files outside Git. No corporate gateway or Textract integration is implemented yet.
+
 ## Cost tracking
 
 The page panel shows its cumulative estimated USD cost with a per-call breakdown. **PDF total so far** sums every extraction and verification attempt for the current upload, including re-extractions and usage returned before invalid JSON or verification failures. This is spend so far, not a forecast for unprocessed pages.

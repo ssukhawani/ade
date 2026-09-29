@@ -4,3 +4,7 @@ test-results/
 playwright-report/
 .env
 .env.*
+
+# Internal infrastructure handover; keep local.
+docs/techops.txt
+.vercel/
